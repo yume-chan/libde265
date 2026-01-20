@@ -1,38 +1,28 @@
-name: build
+name: Build WASM
 
 on:
   push:
     branches: [ master ]
   pull_request:
-    branches: [ master ]
 
 jobs:
   build:
-    strategy:
-      matrix:
-        env:
-          - { CC: "gcc", CXX: "g++" }
-          - { CC: "clang", CXX: "clang++" }
-          - { CMAKE: "cmake" }
-    env: ${{ matrix.env }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Checkout sample streams
-      uses: actions/checkout@v5
-      with:
-        repository: strukturag/libde265-data
-        path: libde265-data
+      - name: Run build.sh inside emscripten/emsdk
+        run: |
+          docker run --rm \
+            -v "$PWD":/src \
+            -w /src \
+            docker.io/emscripten/emsdk \
+            bash build.sh
 
-    - name: Install dependencies
-      run: |
-        ./scripts/ci-before-install-linux.sh
-
-    - name: Prepare CI
-      run: |
-        ./scripts/ci-before-script.sh
-
-    - name: Run tests
-      run: |
-        ./scripts/ci-run.sh
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasm-build
+          path: build/wasm

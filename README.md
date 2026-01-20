@@ -4,6 +4,110 @@ libde265 - open h.265 codec implementation
 
 ![libde265](libde265.png)
 
+**WebAssembly build README**
+
+Notes:
+
+- WebAssembly SIMD is enabled, but not all instructions used by libde265 are supported, some are simulated using other instructions.
+- This library is compute-intensive, it should be ran in a worker to prevent blocking main event loop.
+- When using Vite, add this package to `optimizeDeps.exclude` to workaround its broken dependency "optimizer".
+
+Unsupported:
+
+- Multithreading (because my use case doesn't allow `SharedArrayBuffer`)
+- Logging
+
+Usage:
+
+Check an example project at https://github.com/yume-chan/libde265-example
+
+```ts
+import initialize from "@yume-chan/libde265";
+
+const Module = await initialize();
+
+const Decoder = new Module.Decoder();
+// Or with ES resource management
+// using Decoder = new Module.Decoder();
+
+// Your data handler
+function onData(data: Uint8Array, pts: bigint) {
+    // If needs to restart decoding (skipping frames, seeking, etc.)
+    Decoder.reset();
+
+    // `pts` is not used for decoding
+    // only passthrough to `image.pts`
+    // for you to identify frames
+    Decoder.pushData(chunk, pts);
+    // Or if `data` is one NAL unit
+    // Decoder.pushNal(chunk, pts);
+
+    // Optional, if you know NAL boundary
+    Decoder.pushEndOfNal();
+
+    // Optional, if you know frame boundary
+    Decoder.pushEndOfFrame();
+
+    // If input stream ends
+    Decoder.flushData();
+
+    let more = true;
+    // Loop if `chunk` may contain multiple frames
+    while (more) {
+        const result = Decoder.decode();
+        more = result.more;
+
+        if (!Module.isOk(result.error)) {
+            // Needs more data
+            if (result.error === Module.Error.ERROR_WAITING_FOR_INPUT_DATA) {
+                return;
+            }
+
+            // Other non-recoverable errors
+            console.error(result.error, Module.getErrorText(result.error));
+            controller.error();
+            return;
+        }
+
+        // Read next decoded frame
+        const image = Decoder.getNextPicture();
+        if (!image) {
+            continue;
+        }
+
+        // Get data for each planes
+        // 0,1,2 for Y,Cb,Cr
+        const y = image.getImagePlane(0);
+        const u = image.getImagePlane(1);
+        const v = image.getImagePlane(2);
+
+        // Draw frame yourself...
+
+        // Cleanup the image, otherwise `Decoder.decode` will return `ERROR_IMAGE_BUFFER_FULL`
+        image.delete();
+    }
+}
+
+// Cleanup if not using resource management (`using`)
+Decoder.delete();
+```
+
+Build:
+
+```sh
+docker run --rm -v $(pwd):$(pwd) -w $(pwd) -it docker.io/emscripten/emsdk bash build.sh
+```
+
+or
+
+```sh
+podman run --rm -v $(pwd):$(pwd) --userns=keep-id -w $(pwd) -it docker.io/emscripten/emsdk bash build.sh
+```
+
+Then check the `build/wasm` folder.
+
+**Original README below**
+
 libde265 is an open source implementation of the h.265 video codec.
 It is written from scratch and has a plain C API to enable
 a simple integration into other software.
